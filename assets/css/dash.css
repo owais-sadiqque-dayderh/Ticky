@@ -408,22 +408,6 @@
   color: var(--ink-muted);
 }
 
-.roster__proof {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  margin-top: var(--s-1);
-  text-decoration: none;
-}
-
-.roster__proof:hover,
-.roster__proof:focus-visible {
-  color: var(--accent);
-}
-
 /* The number a volunteer types in when a camera will not read a screen. */
 .roster__ticket {
   font-family: var(--font-mono);

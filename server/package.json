@@ -1,0 +1,17 @@
+{
+  "name": "ticky-server",
+  "private": true,
+  "type": "module",
+  "description": "Registration, verified UPI payments (via YouPI PG) and door check-in for Ticky.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --env-file=.env src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "nodemailer": "^10.1.7",
+    "qrcode": "^1.5.4"
+  }
+}

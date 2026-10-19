@@ -1,6 +1,6 @@
 /**
  * Admin page: draft the event's own details and its extra form questions
- * without touching apps-script/00_Config.gs or redeploying. Everything here
+ * without editing server config or restarting. Everything here
  * is staff-only, gated by the same door code as the dashboard and scanner.
  */
 (function () {
@@ -60,10 +60,7 @@
     f.registrationClosesAt.value = isoToIstInput(ev.registrationClosesAt);
     f.amount.value = ev.amount != null ? ev.amount : '';
     f.currency.value = ev.currency || 'INR';
-    f.upiVpa.value = (ev.upi && ev.upi.vpa) || '';
-    f.upiPayeeName.value = (ev.upi && ev.upi.payeeName) || '';
     f.supportEmail.value = ev.supportEmail || '';
-    f.payQrImageUrl.value = ev.payQrImageUrl || '';
     f.purgeAfterHours.value = ev.purgeAfterHours != null ? ev.purgeAfterHours : '';
   }
 
@@ -81,9 +78,7 @@
       registrationClosesAt: istInputToIso(f.registrationClosesAt.value),
       amount: Number(f.amount.value),
       currency: (f.currency.value.trim() || 'INR').toUpperCase(),
-      upi: { vpa: f.upiVpa.value.trim(), payeeName: f.upiPayeeName.value.trim() },
       supportEmail: f.supportEmail.value.trim(),
-      payQrImageUrl: f.payQrImageUrl.value.trim(),
       purgeAfterHours: Number(f.purgeAfterHours.value)
     };
   }
@@ -176,7 +171,7 @@
   /* --- start next edition ----------------------------------------------------- */
 
   document.getElementById('next-edition').addEventListener('click', async function () {
-    if (!window.confirm('Purge every attendee row and payment screenshot for the current event, and start the next one with the details saved above? This cannot be undone.')) {
+    if (!window.confirm('Purge every attendee row for the current event, and start the next one with the details saved above? This cannot be undone.')) {
       return;
     }
     setStatus('next-status', '', 'Working…');
@@ -559,13 +554,19 @@
 
   async function loadAdmin() {
     try {
-      var data = await API.adminConfig(staffKey);
+      var sent = staffKey;
+      var data = await API.adminConfig(sent);
+      if (sent !== staffKey) return; // signed out while this was in flight
       if (!data.ok) {
         staffKey = '';
         localStorage.removeItem(KEY_STORE);
         updateStaffButton();
         showGate('That door code is not recognised any more. Sign in again.');
         return;
+      }
+      if (data.staffToken && data.staffToken !== staffKey) {
+        staffKey = data.staffToken;
+        localStorage.setItem(KEY_STORE, staffKey);
       }
       gate.hidden = true;
       body.hidden = false;
@@ -613,7 +614,7 @@
         input.select();
         return;
       }
-      staffKey = candidate;
+      staffKey = data.staffToken || candidate;
       localStorage.setItem(KEY_STORE, staffKey);
       errorSlot.textContent = '';
       sheet.hidden = true;

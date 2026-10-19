@@ -259,186 +259,34 @@
 
 /* --- payment --------------------------------------------------------------- */
 
-.pay {
-  margin-top: var(--s-5);
+.pay-wait {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
 }
 
-.pay__qr {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--s-5);
-  padding: var(--s-5);
-  background: var(--surface);
-  border: var(--hairline) solid var(--hair);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+/* `display: grid` and .btn's own display beat the browser's [hidden] rule. */
+.pay-wait[hidden],
+.pay-wait .btn[hidden],
+#submit[hidden] {
+  display: none;
 }
 
-.pay__qr img {
-  width: 150px;
-  height: 150px;
-  background: #fff;
-  padding: 6px;
-  border-radius: var(--radius);
-  flex: 0 0 auto;
-}
-
-.pay__qr figcaption {
-  min-width: 0;
-}
-
-.vpa {
-  display: block;
-  margin-top: var(--s-2);
-  font-size: var(--t-m);
-  color: var(--ink);
+.pay-wait__reset {
+  justify-self: start;
+  padding: 0;
+  font: inherit;
+  font-size: var(--t-s);
+  color: var(--ink-faint);
   background: transparent;
   border: 0;
   border-bottom: var(--hairline) dashed var(--hair);
-  padding: 0 0 5px;
   cursor: pointer;
-  word-break: break-all;
-  text-align: left;
-  transition: border-color var(--fast) var(--ease), color var(--fast) var(--ease);
 }
 
-.vpa:hover {
-  border-bottom-color: var(--accent);
+.pay-wait__reset:hover {
   color: var(--accent);
-}
-
-.vpa[data-copied='true'] {
-  color: var(--ok);
-  border-bottom-color: var(--ok);
-}
-
-.pay__hint {
-  display: block;
-  margin-top: var(--s-2);
-  font-size: var(--t-s);
-  color: var(--ink-faint);
-}
-
-@media (max-width: 560px) {
-  .pay__qr {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-/* --- proof upload ---------------------------------------------------------- */
-
-/* Sized to the thing it holds: a phone screenshot is tall, so the empty state is
-   tall too and nothing jumps when one lands in it. */
-.drop {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 176px;
-  margin-top: var(--s-2);
-  padding: var(--s-5);
-  border: var(--hairline) dashed var(--hair);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  text-align: center;
-  cursor: pointer;
-  overflow: hidden;
-  transition: border-color var(--fast) var(--ease), background var(--fast) var(--ease),
-    box-shadow var(--fast) var(--ease);
-}
-
-.drop:hover,
-.drop:focus-within {
-  border-color: var(--accent);
-  background: var(--accent-wash);
-  box-shadow: var(--shadow-sm);
-}
-
-.drop__face {
-  display: grid;
-  justify-items: center;
-  gap: var(--s-3);
-  position: relative;
-  z-index: 1;
-}
-
-.drop__mark {
-  position: relative;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  border: var(--hairline) solid var(--hair);
-  background: var(--bg);
-  display: grid;
-  place-items: center;
-  transition: background var(--mid) var(--ease), border-color var(--mid) var(--ease);
-}
-
-.drop__mark::before,
-.drop__mark::after {
-  content: '';
-  position: absolute;
-  background: var(--ink-muted);
-  transition: all var(--mid) var(--ease);
-}
-
-.drop__mark::before { width: 12px; height: 1.5px; }
-.drop__mark::after { width: 1.5px; height: 12px; }
-
-.drop__text {
-  color: var(--ink);
-  font-weight: var(--w-medium);
-}
-
-/* Once a file is chosen it fills the box, dimmed, with the filename over it —
-   proof that the right screenshot went in without opening anything. */
-.drop__thumb {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  filter: brightness(0.32) saturate(0.5);
-  animation: fade var(--mid) var(--ease) both;
-}
-
-.drop[data-state='filled'] {
-  border-style: solid;
-  border-color: var(--ink-900);
-  background: var(--ink-900);
-}
-
-.drop[data-state='filled'] .drop__text {
-  color: var(--ivory);
-}
-
-.drop[data-state='filled'] .drop__meta {
-  color: var(--night-300);
-}
-
-.drop[data-state='filled'] .drop__mark {
-  background: var(--ok);
-  border-color: var(--ok);
-}
-
-/* The plus becomes a tick. */
-.drop[data-state='filled'] .drop__mark::before {
-  width: 12px;
-  height: 1.5px;
-  background: #fff;
-  transform: rotate(-45deg) translate(1px, 4px);
-}
-
-.drop[data-state='filled'] .drop__mark::after {
-  width: 1.5px;
-  height: 7px;
-  background: #fff;
-  transform: rotate(-45deg) translate(-4px, 1px);
-}
-
-.field[data-invalid='true'] .drop {
-  border-color: var(--bad);
+  border-bottom-color: var(--accent);
 }
 
 /* --- form status ----------------------------------------------------------- */

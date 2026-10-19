@@ -1,4 +1,4 @@
-/* Live dashboard. Polls the same Sheet the door writes to. */
+/* Live dashboard. Polls the same server the door writes to. */
 (function () {
   'use strict';
 
@@ -217,7 +217,7 @@
       who.appendChild(email);
 
       // Whatever the organiser asked beyond name/email/phone, right under it —
-      // this is the only place these answers are visible outside the raw Sheet.
+      // this is the only place these answers are visible outside the database.
       var answers = formatAnswers(a.formAnswers);
       if (answers.length) {
         var answersBox = document.createElement('div');
@@ -231,18 +231,6 @@
           answersBox.appendChild(row);
         });
         who.appendChild(answersBox);
-      }
-
-      // The screenshot is one tap away rather than on screen: it is only ever
-      // wanted for the rare row someone is actually questioning.
-      if (a.proofUrl) {
-        var proof = document.createElement('a');
-        proof.className = 'roster__proof';
-        proof.href = a.proofUrl;
-        proof.target = '_blank';
-        proof.rel = 'noopener';
-        proof.textContent = 'proof';
-        who.appendChild(proof);
       }
 
       var status = document.createElement('td');
@@ -279,7 +267,10 @@
 
   async function poll() {
     try {
-      var data = await API.stats(staffKey);
+      var sent = staffKey;
+      var data = await API.stats(sent);
+      // Signed in or out while this was in flight: the next poll answers instead.
+      if (sent !== staffKey) return;
       if (!data.ok) throw new API.ApiError(data.error || 'The server could not build the numbers.', data.code);
 
       event = Object.assign(event, data.event);
@@ -307,6 +298,9 @@
         staffKey = '';
         localStorage.removeItem(KEY_STORE);
         updateStaffButton();
+      } else if (data.staffToken && data.staffToken !== staffKey) {
+        staffKey = data.staffToken;
+        localStorage.setItem(KEY_STORE, staffKey);
       }
       firstPaint = false;
     } catch (err) {
@@ -378,7 +372,7 @@
         input.select();
         return;
       }
-      staffKey = candidate;
+      staffKey = data.staffToken || candidate;
       localStorage.setItem(KEY_STORE, staffKey);
       errorSlot.textContent = '';
       sheet.hidden = true;
