@@ -26,6 +26,9 @@ export function loadConfig(env = process.env) {
   if (staffKey.length < 12) {
     throw new Error('STAFF_KEY must be at least 12 characters; it unlocks attendee details. Three short words with dashes work.');
   }
+  if (/^CHANGE-?ME/.test(staffKey)) {
+    throw new Error('STAFF_KEY is still a placeholder. Pick your own door code.');
+  }
 
   return {
     port: Number(env.PORT || 8787),

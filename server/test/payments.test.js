@@ -226,10 +226,12 @@ describe('Ticky server', () => {
     assert.equal((await get({ action: 'adminConfig', staffKey: signedIn.staffToken })).ok, true);
   });
 
-  test('a short door code is refused at boot', () => {
-    assert.throws(() => loadConfig({
-      TICKET_SECRET: 'x'.repeat(40), STAFF_KEY: 'DOOR-42', PUBLIC_URL: 'http://localhost:1', SITE_URL: 'http://localhost:2',
-      YOUPI_API_URL: 'http://unused', YOUPI_MERCHANT_ID: 'm1', YOUPI_WEBHOOK_SECRET: WEBHOOK_SECRET
-    }), /STAFF_KEY/);
+  test('a short or placeholder door code is refused at boot', () => {
+    for (const STAFF_KEY of ['DOOR-42', 'change-me-please', 'CHANGEME-DOOR-CODE']) {
+      assert.throws(() => loadConfig({
+        TICKET_SECRET: 'x'.repeat(40), STAFF_KEY, PUBLIC_URL: 'http://localhost:1', SITE_URL: 'http://localhost:2',
+        YOUPI_API_URL: 'http://unused', YOUPI_MERCHANT_ID: 'm1', YOUPI_WEBHOOK_SECRET: WEBHOOK_SECRET
+      }), /STAFF_KEY/);
+    }
   });
 });
