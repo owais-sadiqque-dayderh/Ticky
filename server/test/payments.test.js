@@ -13,10 +13,11 @@ import { after, before, beforeEach, describe, test } from 'node:test';
 import { createApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { openDatabase } from '../src/db.js';
+import { ticketPayload } from '../src/tickets.js';
 import { createYoupiClient } from '../src/youpi.js';
 
 const WEBHOOK_SECRET = 'whsec_test_0123456789abcdef';
-const STAFF = 'DOOR-42';
+const STAFF = 'DOOR-42-CHICKEN';
 
 /** Stands in for YouPI's payment API: remembers sessions, answers lookups. */
 function fakeYoupi() {
@@ -149,7 +150,10 @@ describe('Ticky server', () => {
     // Someone else's token sees nothing.
     assert.equal((await get({ action: 'ticketStatus', ref: res.ref, token: 'guess' })).ok, false);
 
-    const payload = decodeURIComponent(new URL(status.qrUrl).searchParams.get('text'));
+    // The QR is drawn on this server, never by a third-party image host.
+    assert.match(status.qrUrl, /^data:image\/png;base64,/);
+    const stats0 = await get({ action: 'stats', staffKey: STAFF });
+    const payload = ticketPayload('x'.repeat(40), stats0.event.id, status.ticketId);
     const first = await post({ action: 'checkin', payload, staffKey: STAFF });
     assert.equal(first.state, 'VALID');
     assert.equal(first.name, 'Asha Rao');
@@ -198,5 +202,34 @@ describe('Ticky server', () => {
     assert.equal((await post({ action: 'registration', open: false, staffKey: STAFF })).open, false);
     const closed = await post({ action: 'register', name: 'Ravi K', email: 'ravi@example.com', phone: '9876543210' });
     assert.equal(closed.code, 'CLOSED');
+  });
+
+  test('going back to a payment that already went through issues the ticket instead of a new session', async () => {
+    const { res, session } = await registerOne();
+    youpi.sessions.get(session.paymentId).status = 'SUCCESS';
+    const retry = await post({ action: 'retryPayment', ref: res.ref, token: res.token });
+    assert.equal(retry.status, 'ISSUED');
+    assert.equal(youpi.created.length, 1);
+  });
+
+  test('wrong door codes from one address are capped, but a signed-in device keeps working', async () => {
+    const signedIn = await get({ action: 'stats', staffKey: STAFF.toLowerCase() });
+    assert.match(signedIn.staffToken, /^ST[0-9A-F]{64}$/);
+    assert.equal((await get({ action: 'stats' })).staffToken, undefined);
+
+    for (let i = 0; i < 10; i++) assert.equal((await get({ action: 'stats', staffKey: 'GUESS-' + i })).staff, false);
+    assert.equal((await get({ action: 'stats', staffKey: STAFF })).staff, false);
+    assert.equal((await post({ action: 'checkin', ticketId: 'TKY-2222-2222', staffKey: STAFF })).code, 'FORBIDDEN');
+
+    assert.equal((await get({ action: 'stats', staffKey: signedIn.staffToken })).staff, true);
+    assert.equal((await post({ action: 'checkin', ticketId: 'TKY-2222-2222', staffKey: signedIn.staffToken })).state, 'UNKNOWN');
+    assert.equal((await get({ action: 'adminConfig', staffKey: signedIn.staffToken })).ok, true);
+  });
+
+  test('a short door code is refused at boot', () => {
+    assert.throws(() => loadConfig({
+      TICKET_SECRET: 'x'.repeat(40), STAFF_KEY: 'DOOR-42', PUBLIC_URL: 'http://localhost:1', SITE_URL: 'http://localhost:2',
+      YOUPI_API_URL: 'http://unused', YOUPI_MERCHANT_ID: 'm1', YOUPI_WEBHOOK_SECRET: WEBHOOK_SECRET
+    }), /STAFF_KEY/);
   });
 });

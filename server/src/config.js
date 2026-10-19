@@ -22,6 +22,11 @@ export function loadConfig(env = process.env) {
     throw new Error('TICKET_SECRET must be at least 32 characters. `openssl rand -hex 32` makes a good one.');
   }
 
+  const staffKey = required('STAFF_KEY', env).toUpperCase();
+  if (staffKey.length < 12) {
+    throw new Error('STAFF_KEY must be at least 12 characters; it unlocks attendee details. Three short words with dashes work.');
+  }
+
   return {
     port: Number(env.PORT || 8787),
     dataDir: path.resolve(env.DATA_DIR || './data'),
@@ -37,7 +42,7 @@ export function loadConfig(env = process.env) {
       .split(',').map((o) => o.trim()).filter(Boolean),
 
     /** The door code typed in by staff on the scanner, dashboard and admin pages. */
-    staffKey: required('STAFF_KEY', env).toUpperCase(),
+    staffKey,
     ticketSecret,
     ticketPrefix: String(env.TICKET_PREFIX || 'TKY').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) || 'TKY',
 

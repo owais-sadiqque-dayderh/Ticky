@@ -25,7 +25,7 @@ export async function createMailer({ smtpUrl, mailFrom }) {
         event.venueLine,
         '',
         `Ticket no. ${ticketId}`,
-        `Your entry QR: ${qrUrl}`,
+        'Your entry QR is attached.',
         '',
         'Show the QR at the door. If it will not scan, staff can type the ticket number in.',
         event.supportEmail ? `Questions: ${event.supportEmail}` : ''
@@ -36,7 +36,7 @@ export async function createMailer({ smtpUrl, mailFrom }) {
         <p>You're in for <strong>${escapeHtml(event.name)} ${escapeHtml(event.edition)}</strong>.<br>
            ${escapeHtml(when)} &middot; doors ${escapeHtml(event.doorsLabel)}<br>
            ${escapeHtml(event.venueLine)}</p>
-        <p><img src="${escapeHtml(qrUrl)}" width="240" height="240" alt="Entry QR code"></p>
+        <p><img src="cid:ticket-qr" width="240" height="240" alt="Entry QR code"></p>
         <p>Ticket no. <strong style="font-family:monospace;letter-spacing:0.1em">${escapeHtml(ticketId)}</strong></p>
         <p>Show the QR at the door. If it will not scan, staff can type the ticket number in.</p>
         ${event.supportEmail ? `<p>Questions: <a href="mailto:${escapeHtml(event.supportEmail)}">${escapeHtml(event.supportEmail)}</a></p>` : ''}
@@ -47,7 +47,9 @@ export async function createMailer({ smtpUrl, mailFrom }) {
         to,
         subject: `Your ticket — ${event.name} ${event.edition}`,
         text,
-        html
+        html,
+        // Attached rather than linked, so no image host ever sees the door pass.
+        attachments: [{ filename: `${ticketId}.png`, path: qrUrl, cid: 'ticket-qr' }]
       });
     }
   };

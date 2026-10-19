@@ -15,7 +15,7 @@ import {
   newEventId, publicEvent, readAnswers, registrationState
 } from './event.js';
 import { DEFAULT_THEME, THEME_OPTIONS, cleanTheme, resolveTheme } from './theme.js';
-import { newSecret, newTicketId, qrImageUrl, readTicketPayload, safeEqual, ticketPayload } from './tickets.js';
+import { newSecret, newTicketId, qrDataUrl, readTicketPayload, safeEqual, ticketPayload } from './tickets.js';
 import { baseOrderId } from './youpi.js';
 
 const MAX_API_BODY = 8 * 1024 * 1024;     // a 4 MB background, base64'd, with room to spare
@@ -23,6 +23,8 @@ const MAX_WEBHOOK_BODY = 64 * 1024;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const RECONCILE_EVERY_MS = 4000;
 const STALE_PENDING_MS = 24 * 3600 * 1000;
+const STAFF_TRIES = 10;                   // wrong door codes per address before a pause
+const STAFF_PAUSE_MS = 15 * 60 * 1000;
 
 const UPLOAD_TYPES = {
   'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg'
@@ -70,13 +72,37 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
   const store = new Store(db);
   const uploadDir = path.join(config.dataDir, 'uploads');
   const hits = new Map();
+  const staffMisses = new Map();
+  // Derived from the door code, so changing STAFF_KEY signs every device out.
+  const staffToken = 'ST' + crypto.createHmac('sha256', config.ticketSecret)
+    .update(`staff:${config.staffKey}`).digest('hex').toUpperCase();
 
   const getEvent = () => store.getSetting('event', DEFAULT_EVENT);
   const getFields = () => store.getSetting('formFields', []);
   const getTheme = () => store.getSetting('theme', DEFAULT_THEME);
   const isOpen = () => store.getSetting('registrationOpen', true);
 
-  const isStaff = (key) => Boolean(key) && safeEqual(String(key).trim().toUpperCase(), config.staffKey);
+  /**
+   * The door code unlocks attendee details and admin actions, so wrong guesses
+   * from one address are capped; past the cap even the right code waits.
+   */
+  function isStaff(key, ctx) {
+    if (!key) return false;
+    // A signed-in device holds the session token, which is unguessable and so
+    // never limited: someone guessing on the venue Wi-Fi cannot lock the door out.
+    if (safeEqual(String(key).trim().toUpperCase(), staffToken)) return true;
+    const t = now().getTime();
+    const ip = ctx?.ip || 'unknown';
+    const miss = staffMisses.get(ip);
+    if (miss && miss.resetAt <= t) staffMisses.delete(ip);
+    else if (miss && miss.count >= STAFF_TRIES) return false;
+
+    if (safeEqual(String(key).trim().toUpperCase(), config.staffKey)) return true;
+    const entry = staffMisses.get(ip) || { count: 0, resetAt: t + STAFF_PAUSE_MS };
+    entry.count += 1;
+    staffMisses.set(ip, entry);
+    return false;
+  }
   const forbidden = { ok: false, code: 'FORBIDDEN', error: 'That door code is not recognised. Ask the organiser for the current one.' };
 
   /** A few attempts per minute per address is plenty for a person and slows a script. */
@@ -93,9 +119,10 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
 
   /* --- tickets ------------------------------------------------------------ */
 
-  function ticketView(row, eventId) {
+  /** The QR is drawn here: the signed payload is a door pass and never goes to a third party. */
+  async function ticketView(row, eventId) {
     const payload = ticketPayload(config.ticketSecret, eventId, row.ticket_id);
-    return { ticketId: row.ticket_id, qrUrl: qrImageUrl(payload) };
+    return { ticketId: row.ticket_id, qrUrl: await qrDataUrl(payload) };
   }
 
   async function deliver(id) {
@@ -108,7 +135,7 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
     }
     const ev = publicEvent(getEvent());
     try {
-      await mailer.sendTicket({ to: row.email, name: row.name, event: ev, ...ticketView(row, row.event_id) });
+      await mailer.sendTicket({ to: row.email, name: row.name, event: ev, ...(await ticketView(row, row.event_id)) });
       store.setDelivery(id, true, null);
     } catch (err) {
       log.error(`[mail] ticket ${row.ticket_id} not sent: ${err.message}`);
@@ -162,10 +189,10 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
   }
 
   /** Asks YouPI directly, for when a webhook is late or never comes. */
-  async function reconcile(row) {
+  async function reconcile(row, { force = false } = {}) {
     if (row.status !== 'PENDING_PAYMENT' || !row.payment_id) return;
     const t = now().getTime();
-    if (row.checked_at && t - row.checked_at < RECONCILE_EVERY_MS) return;
+    if (!force && row.checked_at && t - row.checked_at < RECONCILE_EVERY_MS) return;
     store.markChecked(row.id, row.payment_state, t);
 
     let payment;
@@ -182,8 +209,8 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
 
   /* --- actions ------------------------------------------------------------ */
 
-  function stats(q) {
-    const staff = isStaff(q.staffKey);
+  function stats(q, ctx) {
+    const staff = isStaff(q.staffKey, ctx);
     const ev = getEvent();
     const rows = store.ticketed(ev.id);
     const live = rows.filter((r) => r.status !== 'REVOKED');
@@ -214,6 +241,7 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
       staff,
       generatedAt: istIso(now())
     };
+    if (staff) out.staffToken = staffToken;
 
     if (staff) {
       out.attendees = rows.map((r) => ({
@@ -338,7 +366,7 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
       ok: true,
       status: row.status,
       name: row.name,
-      ...ticketView(row, row.event_id),
+      ...(await ticketView(row, row.event_id)),
       message: row.status === 'REVOKED'
         ? 'This ticket was cancelled.'
         : mailer ? 'Payment confirmed. Your ticket is below and on its way to your inbox.' : 'Payment confirmed. Your ticket is below; screenshot it.'
@@ -346,8 +374,14 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
   }
 
   async function retryPayment(body) {
-    const row = findOwned(body);
+    let row = findOwned(body);
     if (!row) return { ok: false, code: 'NOT_FOUND', error: 'We could not find that registration. Start again.' };
+    if (row.status === 'PENDING_PAYMENT') {
+      // Settle the current attempt first, so a payment that already went through
+      // is never left behind for a fresh "-R" session.
+      await reconcile(row, { force: true });
+      row = store.findRegistration(row.id);
+    }
     if (row.status !== 'PENDING_PAYMENT') return { ok: true, status: row.status };
     if (row.payment_state === 'AMOUNT_MISMATCH') {
       return { ok: false, code: 'NEEDS_HELP', error: 'Write to us before paying again; a payment for the wrong amount is already on file.' };
@@ -373,14 +407,14 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
     if (payment.status === 'SUCCESS') {
       // The earlier attempt went through after all. This answer carries no
       // payment method, so confirm it through the merchant view like any other.
-      await reconcile({ ...store.findRegistration(row.id), checked_at: null });
+      await reconcile(store.findRegistration(row.id), { force: true });
       return { ok: true, status: store.findRegistration(row.id).status };
     }
     return { ok: true, pending: true, checkoutUrl: payment.checkoutUrl };
   }
 
-  function checkin(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function checkin(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     const ev = getEvent();
 
     let ticketId;
@@ -407,17 +441,18 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
     return { ok: true, state: 'ALREADY_USED', ...who, message: fresh.checkin_at ? `Came in at ${istTime(new Date(fresh.checkin_at))}.` : '' };
   }
 
-  function setRegistration(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function setRegistration(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     store.setSetting('registrationOpen', body.open === true);
     return { ok: true, ...registrationState(getEvent(), body.open === true, now()) };
   }
 
-  function adminConfig(q) {
-    if (!isStaff(q.staffKey)) return forbidden;
+  function adminConfig(q, ctx) {
+    if (!isStaff(q.staffKey, ctx)) return forbidden;
     const theme = cleanTheme(getTheme());
     return {
       ok: true,
+      staffToken,
       event: adminEvent(getEvent()),
       fields: getFields(),
       theme,
@@ -426,24 +461,24 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
     };
   }
 
-  function updateEvent(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function updateEvent(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     const result = applyEventPatch(getEvent(), body.event);
     if (result.error) return { ok: false, error: result.error, field: result.field };
     store.setSetting('event', result.event);
     return { ok: true, event: adminEvent(result.event) };
   }
 
-  function updateFormFields(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function updateFormFields(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     const result = cleanFormFields(body.fields);
     if (result.error) return { ok: false, error: result.error };
     store.setSetting('formFields', result.fields);
     return { ok: true, fields: result.fields };
   }
 
-  function startNextEdition(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function startNextEdition(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     const current = getEvent();
     const result = applyEventPatch(current, body.event);
     if (result.error) return { ok: false, error: result.error, field: result.field };
@@ -458,15 +493,15 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
     return { ok: true, event: adminEvent(next), purged: { registered } };
   }
 
-  function updateTheme(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function updateTheme(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     const clean = cleanTheme(body.theme);
     store.setSetting('theme', clean);
     return { ok: true, raw: clean, theme: resolveTheme(clean) };
   }
 
-  function uploadAsset(body) {
-    if (!isStaff(body.staffKey)) return forbidden;
+  function uploadAsset(body, ctx) {
+    if (!isStaff(body.staffKey, ctx)) return forbidden;
     const asset = body.asset || {};
     const ext = UPLOAD_TYPES[asset.type];
     if (!ext) return { ok: false, error: 'PNG, JPG, WebP, GIF or SVG only.' };
@@ -558,7 +593,8 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
 
   function clientIp(req) {
     if (config.trustProxy) {
-      const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+      // The proxy appends the address it saw; anything to its left is the client's to write.
+      const forwarded = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean).pop();
       if (forwarded) return forwarded;
     }
     return req.socket.remoteAddress || 'unknown';
@@ -615,6 +651,9 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
   /** Hourly: forget abandoned checkouts, and keep the "wiped after the event" promise. */
   function sweep() {
     const t = now().getTime();
+    for (const map of [hits, staffMisses]) {
+      for (const [ip, entry] of map) if (entry.resetAt <= t) map.delete(ip);
+    }
     store.purgeStalePending(new Date(t - STALE_PENDING_MS).toISOString());
 
     const ev = getEvent();

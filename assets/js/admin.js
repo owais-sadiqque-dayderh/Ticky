@@ -554,13 +554,19 @@
 
   async function loadAdmin() {
     try {
-      var data = await API.adminConfig(staffKey);
+      var sent = staffKey;
+      var data = await API.adminConfig(sent);
+      if (sent !== staffKey) return; // signed out while this was in flight
       if (!data.ok) {
         staffKey = '';
         localStorage.removeItem(KEY_STORE);
         updateStaffButton();
         showGate('That door code is not recognised any more. Sign in again.');
         return;
+      }
+      if (data.staffToken && data.staffToken !== staffKey) {
+        staffKey = data.staffToken;
+        localStorage.setItem(KEY_STORE, staffKey);
       }
       gate.hidden = true;
       body.hidden = false;
@@ -608,7 +614,7 @@
         input.select();
         return;
       }
-      staffKey = candidate;
+      staffKey = data.staffToken || candidate;
       localStorage.setItem(KEY_STORE, staffKey);
       errorSlot.textContent = '';
       sheet.hidden = true;

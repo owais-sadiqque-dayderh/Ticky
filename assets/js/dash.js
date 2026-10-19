@@ -267,7 +267,10 @@
 
   async function poll() {
     try {
-      var data = await API.stats(staffKey);
+      var sent = staffKey;
+      var data = await API.stats(sent);
+      // Signed in or out while this was in flight: the next poll answers instead.
+      if (sent !== staffKey) return;
       if (!data.ok) throw new API.ApiError(data.error || 'The server could not build the numbers.', data.code);
 
       event = Object.assign(event, data.event);
@@ -295,6 +298,9 @@
         staffKey = '';
         localStorage.removeItem(KEY_STORE);
         updateStaffButton();
+      } else if (data.staffToken && data.staffToken !== staffKey) {
+        staffKey = data.staffToken;
+        localStorage.setItem(KEY_STORE, staffKey);
       }
       firstPaint = false;
     } catch (err) {
@@ -366,7 +372,7 @@
         input.select();
         return;
       }
-      staffKey = candidate;
+      staffKey = data.staffToken || candidate;
       localStorage.setItem(KEY_STORE, staffKey);
       errorSlot.textContent = '';
       sheet.hidden = true;

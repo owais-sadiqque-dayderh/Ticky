@@ -7,6 +7,8 @@
  */
 import crypto from 'node:crypto';
 
+import QRCode from 'qrcode';
+
 const VERSION = 't1';
 // No 0/O or 1/I: these get read aloud and typed in at the door.
 const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -52,9 +54,11 @@ export function readTicketPayload(secret, payload) {
   return { valid: true, eventId, ticketId };
 }
 
-/** Same QR service the registration page already used for the pay code. */
-export function qrImageUrl(payload) {
-  return 'https://quickchart.io/qr?size=360&margin=1&ecLevel=M&dark=191512&light=ffffff&text=' + encodeURIComponent(payload);
+const QR_OPTIONS = { width: 360, margin: 1, errorCorrectionLevel: 'M', color: { dark: '#191512', light: '#ffffff' } };
+
+/** The entry QR as a PNG data: URL, drawn locally so the payload stays on this server. */
+export function qrDataUrl(payload) {
+  return QRCode.toDataURL(payload, QR_OPTIONS);
 }
 
 export function safeEqual(a, b) {
