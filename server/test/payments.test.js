@@ -26,14 +26,21 @@ function fakeYoupi() {
     sessions,
     created: [],
     verifyWebhook: real.verifyWebhook,
+    // Like YouPI: an order id with an open session gets that session back; once
+    // it is over, a new session opens under "<base>-R<4 digits>".
     async createPayment(req) {
       this.created.push(req);
+      const existing = [...sessions.values()].find((s) => s.orderId === req.orderId);
+      if (existing && !['FAILED', 'EXPIRED', 'CANCELLED'].includes(existing.status)) {
+        return { ...existing, checkoutUrl: `http://pay.test/checkout/${existing.paymentId}` };
+      }
+      const orderId = existing ? `${req.orderId.replace(/-R\d+$/, '')}-R${1000 + sessions.size}` : req.orderId;
       const paymentId = crypto.randomUUID();
       sessions.set(paymentId, {
-        paymentId, orderId: req.orderId, amountPaise: String(req.amountPaise), currency: req.currency,
+        paymentId, orderId, amountPaise: String(req.amountPaise), currency: req.currency,
         status: 'INITIATED', method: 'UPI', metadata: req.metadata
       });
-      return { paymentId, orderId: req.orderId, status: 'INITIATED', checkoutUrl: `http://pay.test/checkout/${paymentId}` };
+      return { paymentId, orderId, status: 'INITIATED', checkoutUrl: `http://pay.test/checkout/${paymentId}` };
     },
     async getPayment(id) {
       const s = sessions.get(id);
@@ -176,8 +183,17 @@ describe('Ticky server', () => {
 
     const retry = await post({ action: 'retryPayment', ref: res.ref, token: res.token });
     assert.equal(retry.pending, true);
-    assert.equal(youpi.created.length, 2);
-    assert.equal(youpi.created[1].orderId, youpi.created[0].orderId);
+    assert.notEqual(retry.checkoutUrl, res.checkoutUrl);
+
+    // "Back to the payment" reopens the retry rather than starting a third session.
+    const reopened = await post({ action: 'retryPayment', ref: res.ref, token: res.token });
+    assert.equal(reopened.checkoutUrl, retry.checkoutUrl);
+
+    // And the retry, paid under YouPI's "-R" order id, still issues the ticket.
+    const retrySession = [...youpi.sessions.values()].find((s) => retry.checkoutUrl.endsWith(s.paymentId));
+    assert.match(retrySession.orderId, /-R\d{4}$/);
+    assert.equal((await webhook(successFor(retrySession))).status, 200);
+    assert.equal((await get({ action: 'ticketStatus', ref: res.ref, token: res.token })).status, 'ISSUED');
 
     assert.equal((await post({ action: 'registration', open: false, staffKey: STAFF })).open, false);
     const closed = await post({ action: 'register', name: 'Ravi K', email: 'ravi@example.com', phone: '9876543210' });

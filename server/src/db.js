@@ -28,6 +28,7 @@ const SCHEMA = `
     currency       TEXT NOT NULL,
     status         TEXT NOT NULL CHECK (status IN ('PENDING_PAYMENT', 'ISSUED', 'CHECKED_IN', 'REVOKED')),
     payment_id     TEXT,
+    gateway_order  TEXT,               -- YouPI's id for the latest attempt (order_id, or order_id-R1234)
     payment_state  TEXT,
     checked_at     INTEGER,
     ticket_id      TEXT UNIQUE,
@@ -111,9 +112,9 @@ export class Store {
     `).get(eventId, email, sinceIso).n;
   }
 
-  setPayment(id, paymentId, paymentState) {
-    this.db.prepare("UPDATE registrations SET payment_id = ?, payment_state = ? WHERE id = ? AND status = 'PENDING_PAYMENT'")
-      .run(paymentId, paymentState, id);
+  setPayment(id, paymentId, gatewayOrder, paymentState) {
+    this.db.prepare("UPDATE registrations SET payment_id = ?, gateway_order = ?, payment_state = ? WHERE id = ? AND status = 'PENDING_PAYMENT'")
+      .run(paymentId, gatewayOrder, paymentState, id);
   }
 
   markChecked(id, paymentState, atMs) {

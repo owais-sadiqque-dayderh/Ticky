@@ -293,7 +293,7 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
       return { ok: false, code: 'PAYMENTS_DOWN', error: 'Payments are not reachable right now. Nothing was charged. Try again in a minute.' };
     }
 
-    store.setPayment(id, payment.paymentId, payment.status || 'INITIATED');
+    store.setPayment(id, payment.paymentId, payment.orderId || orderId, payment.status || 'INITIATED');
     return {
       ok: true,
       pending: true,
@@ -355,8 +355,10 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
 
     let payment;
     try {
+      // The latest attempt's id: YouPI hands that session back while it is open, and
+      // opens the next "-R" attempt once it is over.
       payment = await youpi.createPayment({
-        orderId: row.order_id,
+        orderId: row.gateway_order || row.order_id,
         amountPaise: row.amount_paise,
         currency: row.currency,
         customer: { name: row.name, email: row.email, mobileNumber: row.phone },
@@ -367,7 +369,7 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
       log.error(`[retry] ${err.message}`);
       return { ok: false, code: 'PAYMENTS_DOWN', error: 'Payments are not reachable right now. Try again in a minute.' };
     }
-    store.setPayment(row.id, payment.paymentId, payment.status || 'INITIATED');
+    store.setPayment(row.id, payment.paymentId, payment.orderId || row.gateway_order, payment.status || 'INITIATED');
     if (payment.status === 'SUCCESS') {
       // The earlier attempt went through after all. This answer carries no
       // payment method, so confirm it through the merchant view like any other.
