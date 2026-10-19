@@ -88,7 +88,7 @@
 
     /** Has the bank confirmed this registration's payment yet? */
     ticketStatus: function (ref, token) {
-      return get({ action: 'ticketStatus', ref: ref, token: token });
+      return post({ action: 'ticketStatus', ref: ref, token: token });
     },
 
     /** Open a new payment attempt for a registration whose last one failed. */
@@ -105,7 +105,8 @@
     },
 
     stats: function (staffKey) {
-      return get({ action: 'stats', staffKey: staffKey });
+      // Credentials ride in a POST body, never in a URL that proxies and history keep.
+      return staffKey ? post({ action: 'stats', staffKey: staffKey }) : get({ action: 'stats' });
     },
 
     /** Staff switch: stop or resume taking responses on the public form. */
@@ -115,7 +116,7 @@
 
     /** Staff only: the full event config and field schema, for admin.html. */
     adminConfig: function (staffKey) {
-      return get({ action: 'adminConfig', staffKey: staffKey });
+      return post({ action: 'adminConfig', staffKey: staffKey });
     },
 
     /** Staff only: patch the event's own details. */

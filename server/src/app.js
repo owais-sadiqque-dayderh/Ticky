@@ -515,9 +515,10 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
     return { ok: true, url: `${config.publicUrl}/uploads/${file}` };
   }
 
-  const GET_ACTIONS = { stats, adminConfig, ticketStatus };
+  // GET carries no credentials: anything with a door code or buyer token is POST.
+  const GET_ACTIONS = { stats };
   const POST_ACTIONS = {
-    register, retryPayment, checkin, registration: setRegistration, updateEvent,
+    stats, adminConfig, ticketStatus, register, retryPayment, checkin, registration: setRegistration, updateEvent,
     updateFormFields, startNextEdition, updateTheme, uploadAsset
   };
 
@@ -625,7 +626,7 @@ export function createApp({ config, db, youpi, mailer = null, now = () => new Da
         let action;
         let params;
         if (req.method === 'GET') {
-          params = Object.fromEntries(url.searchParams.entries());
+          params = { action: url.searchParams.get('action') };
           action = Object.hasOwn(GET_ACTIONS, params.action) ? GET_ACTIONS[params.action] : null;
         } else if (req.method === 'POST') {
           const raw = await readBody(req, MAX_API_BODY);

@@ -112,11 +112,11 @@ describe('Ticky server', () => {
     assert.equal(session.amountPaise, '10000');
     assert.equal(youpi.created[0].metadata.registrationId, res.ref);
 
-    const status = await get({ action: 'ticketStatus', ref: res.ref, token: res.token });
+    const status = await post({ action: 'ticketStatus', ref: res.ref, token: res.token });
     assert.equal(status.status, 'PENDING');
     assert.equal(status.ticketId, undefined);
 
-    const stats = await get({ action: 'stats', staffKey: STAFF });
+    const stats = await post({ action: 'stats', staffKey: STAFF });
     assert.equal(stats.counts.registered, 0);
     assert.equal(stats.counts.pending, 1);
   });
@@ -125,14 +125,14 @@ describe('Ticky server', () => {
     const { res, session } = await registerOne();
     const forged = await webhook(successFor(session), { secret: 'not-the-secret' });
     assert.equal(forged.status, 401);
-    assert.equal((await get({ action: 'ticketStatus', ref: res.ref, token: res.token })).status, 'PENDING');
+    assert.equal((await post({ action: 'ticketStatus', ref: res.ref, token: res.token })).status, 'PENDING');
   });
 
   test('a signed SUCCESS for the wrong amount or a COD order issues nothing', async () => {
     const { res, session } = await registerOne();
     assert.equal((await webhook(successFor(session, { method: 'COD' }))).status, 200);
     assert.equal((await webhook(successFor(session, { amountPaise: 100 }))).status, 200);
-    const status = await get({ action: 'ticketStatus', ref: res.ref, token: res.token });
+    const status = await post({ action: 'ticketStatus', ref: res.ref, token: res.token });
     assert.equal(status.status, 'PENDING');
     assert.equal(status.paymentState, 'AMOUNT_MISMATCH');
   });
@@ -143,16 +143,16 @@ describe('Ticky server', () => {
     assert.equal((await webhook(successFor(session), { deliveryId })).status, 200);
     assert.equal((await webhook(successFor(session), { deliveryId })).status, 200); // YouPI retry
 
-    const status = await get({ action: 'ticketStatus', ref: res.ref, token: res.token });
+    const status = await post({ action: 'ticketStatus', ref: res.ref, token: res.token });
     assert.equal(status.status, 'ISSUED');
     assert.match(status.ticketId, /^TKY-[2-9A-HJ-NP-Z]{4}-[2-9A-HJ-NP-Z]{4}$/);
 
     // Someone else's token sees nothing.
-    assert.equal((await get({ action: 'ticketStatus', ref: res.ref, token: 'guess' })).ok, false);
+    assert.equal((await post({ action: 'ticketStatus', ref: res.ref, token: 'guess' })).ok, false);
 
     // The QR is drawn on this server, never by a third-party image host.
     assert.match(status.qrUrl, /^data:image\/png;base64,/);
-    const stats0 = await get({ action: 'stats', staffKey: STAFF });
+    const stats0 = await post({ action: 'stats', staffKey: STAFF });
     const payload = ticketPayload('x'.repeat(40), stats0.event.id, status.ticketId);
     const first = await post({ action: 'checkin', payload, staffKey: STAFF });
     assert.equal(first.state, 'VALID');
@@ -164,7 +164,7 @@ describe('Ticky server', () => {
     assert.equal((await post({ action: 'checkin', payload: tampered, staffKey: STAFF })).state, 'INVALID');
     assert.equal((await post({ action: 'checkin', payload, staffKey: 'WRONG' })).code, 'FORBIDDEN');
 
-    const stats = await get({ action: 'stats', staffKey: STAFF });
+    const stats = await post({ action: 'stats', staffKey: STAFF });
     assert.deepEqual([stats.counts.registered, stats.counts.checkedIn], [1, 1]);
 
     // One ticket per email.
@@ -175,14 +175,14 @@ describe('Ticky server', () => {
   test('when the webhook never arrives, polling asks YouPI and issues on a confirmed UPI payment', async () => {
     const { res, session } = await registerOne();
     youpi.sessions.get(session.paymentId).status = 'SUCCESS';
-    const status = await get({ action: 'ticketStatus', ref: res.ref, token: res.token });
+    const status = await post({ action: 'ticketStatus', ref: res.ref, token: res.token });
     assert.equal(status.status, 'ISSUED');
   });
 
   test('a failed payment can be retried, and a closed form takes no new registrations', async () => {
     const { res, session } = await registerOne();
     youpi.sessions.get(session.paymentId).status = 'EXPIRED';
-    const status = await get({ action: 'ticketStatus', ref: res.ref, token: res.token });
+    const status = await post({ action: 'ticketStatus', ref: res.ref, token: res.token });
     assert.equal(status.canRetry, true);
 
     const retry = await post({ action: 'retryPayment', ref: res.ref, token: res.token });
@@ -197,7 +197,7 @@ describe('Ticky server', () => {
     const retrySession = [...youpi.sessions.values()].find((s) => retry.checkoutUrl.endsWith(s.paymentId));
     assert.match(retrySession.orderId, /-R\d{4}$/);
     assert.equal((await webhook(successFor(retrySession))).status, 200);
-    assert.equal((await get({ action: 'ticketStatus', ref: res.ref, token: res.token })).status, 'ISSUED');
+    assert.equal((await post({ action: 'ticketStatus', ref: res.ref, token: res.token })).status, 'ISSUED');
 
     assert.equal((await post({ action: 'registration', open: false, staffKey: STAFF })).open, false);
     const closed = await post({ action: 'register', name: 'Ravi K', email: 'ravi@example.com', phone: '9876543210' });
@@ -213,17 +213,20 @@ describe('Ticky server', () => {
   });
 
   test('wrong door codes from one address are capped, but a signed-in device keeps working', async () => {
-    const signedIn = await get({ action: 'stats', staffKey: STAFF.toLowerCase() });
+    const signedIn = await post({ action: 'stats', staffKey: STAFF.toLowerCase() });
     assert.match(signedIn.staffToken, /^ST[0-9A-F]{64}$/);
-    assert.equal((await get({ action: 'stats' })).staffToken, undefined);
-
-    for (let i = 0; i < 10; i++) assert.equal((await get({ action: 'stats', staffKey: 'GUESS-' + i })).staff, false);
+    assert.equal((await post({ action: 'stats' })).staffToken, undefined);
+    // A door code in a URL is ignored, so it never needs to be in one.
     assert.equal((await get({ action: 'stats', staffKey: STAFF })).staff, false);
+    assert.equal((await get({ action: 'ticketStatus', ref: 'x', token: 'y' })).code, 'BAD_ACTION');
+
+    for (let i = 0; i < 10; i++) assert.equal((await post({ action: 'stats', staffKey: 'GUESS-' + i })).staff, false);
+    assert.equal((await post({ action: 'stats', staffKey: STAFF })).staff, false);
     assert.equal((await post({ action: 'checkin', ticketId: 'TKY-2222-2222', staffKey: STAFF })).code, 'FORBIDDEN');
 
-    assert.equal((await get({ action: 'stats', staffKey: signedIn.staffToken })).staff, true);
+    assert.equal((await post({ action: 'stats', staffKey: signedIn.staffToken })).staff, true);
     assert.equal((await post({ action: 'checkin', ticketId: 'TKY-2222-2222', staffKey: signedIn.staffToken })).state, 'UNKNOWN');
-    assert.equal((await get({ action: 'adminConfig', staffKey: signedIn.staffToken })).ok, true);
+    assert.equal((await post({ action: 'adminConfig', staffKey: signedIn.staffToken })).ok, true);
   });
 
   test('a short or placeholder door code is refused at boot', () => {
