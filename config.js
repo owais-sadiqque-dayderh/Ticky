@@ -1,13 +1,13 @@
 /**
  * Deployment configuration. This is the only file you edit after deploying the
- * Apps Script Web App.
+ * Ticky server (server/README.md).
  *
  * Nothing secret goes here — it ships to every browser. The door code is typed
  * in by staff on the scanner page, not stored in this file.
  */
 window.OSDAYS_CONFIG = {
-  /** The Apps Script Web App /exec URL. Run setupProject(), deploy, paste here. */
-  API_BASE: 'https://script.google.com/macros/s/AKfycbzEXCajdx4Ri-vlhPH4KwktRXO6mEfLZj2IPrJAbJ0X_EDOVMAjF2UlM8FQ7uuebD9B5g/exec',
+  /** The Ticky server's /api URL, e.g. https://api.example.com/api */
+  API_BASE: 'PASTE_TICKY_SERVER_URL/api',
 
   /**
    * Shown while the first /stats request is still in flight, so the page never
@@ -24,9 +24,6 @@ window.OSDAYS_CONFIG = {
     doorsLabel: '9:20 pm',
     amount: 100,
     currency: 'INR',
-    upiVpa: 'dayderhowaissadiqque@okaxis',
-    upiPayeeName: 'Owais Sadiqque',
-    payQrImageUrl: '',
     supportEmail: 'dayderhowaissadiqque@gmail.com'
   },
 

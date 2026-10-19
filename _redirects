@@ -1,0 +1,3 @@
+# Cloudflare Pages. YouPI's checkout sends a failed or expired payment back to
+# /order-failed and friends; the registration page picks up from there.
+/order-*  /index.html  200

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Get a ticket — OS Days</title>
-<meta name="description" content="Register for OS Days, an evening of people who ship in public. Pay over UPI, get your ticket in your inbox.">
+<meta name="description" content="Register for OS Days, an evening of people who ship in public. Pay over UPI, get your ticket the moment it lands.">
 <meta name="theme-color" content="#191512">
 
 <meta property="og:title" content="OS Days 04 — get a ticket">
@@ -64,8 +64,8 @@
     <p class="closed__note lede" id="closed-note"></p>
   </section>
 
-  <!-- Numbered because the order is real: you cannot screenshot a payment you
-       have not made. -->
+  <!-- Numbered because the order is real: the ticket carries the name you
+       pay under. -->
   <form class="steps" id="register-form" novalidate>
 
     <section class="step" data-reveal aria-labelledby="step-1">
@@ -107,45 +107,16 @@
       <p class="step__index" aria-hidden="true"><span>02</span></p>
       <div class="step__body">
         <h2 class="title step__title" id="step-2">Pay <span data-bind="amountLabel">&#8377;299</span></h2>
-        <p class="step__note">Scan with your UPI app's own camera — the amount is filled in for you.</p>
+        <p class="step__note">Over UPI, from any app. The ticket is issued the moment the bank confirms the payment &mdash; no screenshot needed.</p>
 
-        <div class="pay">
-          <figure class="pay__qr">
-            <img id="pay-qr" alt="UPI QR code for OS Days" width="150" height="150">
-            <figcaption>
-              <span class="label">Paying to</span>
-              <button type="button" class="vpa mono" id="copy-vpa" data-bind="upiVpa">osdays@upi</button>
-              <span class="pay__hint">Tap to copy</span>
-            </figcaption>
-          </figure>
-        </div>
-      </div>
-    </section>
+        <button type="submit" class="btn btn--primary btn--block" id="submit">Pay and get my ticket</button>
 
-    <section class="step" data-reveal aria-labelledby="step-3">
-      <p class="step__index" aria-hidden="true"><span>03</span></p>
-      <div class="step__body">
-        <h2 class="title step__title" id="step-3">Show the payment</h2>
-        <p class="step__note">The success screen from your UPI app.</p>
-
-        <div class="field" data-invalid="false">
-          <span class="label">Payment screenshot</span>
-
-          <label class="drop" id="proof-drop" data-state="empty">
-            <input type="file" name="proof" class="visually-hidden"
-                   accept="image/png,image/jpeg,image/webp,image/heic,application/pdf">
-            <img class="drop__thumb" id="proof-thumb" alt="" hidden>
-            <span class="drop__face">
-              <span class="drop__mark" aria-hidden="true"></span>
-              <span class="drop__text" id="proof-text">Add the screenshot</span>
-              <span class="drop__meta label" id="proof-meta">PNG, JPG or PDF</span>
-            </span>
-          </label>
-
-          <span class="field-error" data-error-for="proof" role="alert"></span>
+        <!-- Shown after the trip to the payment page, while the bank confirms. -->
+        <div class="pay-wait" id="pay-wait" hidden>
+          <button type="button" class="btn btn--block" id="pay-retry">Back to the payment</button>
+          <button type="button" class="pay-wait__reset" id="pay-reset">Start over with different details</button>
         </div>
 
-        <button type="submit" class="btn btn--primary btn--block" id="submit">Get my ticket</button>
         <p class="step__fineprint">Everything you enter here is wiped after the event.</p>
       </div>
     </section>

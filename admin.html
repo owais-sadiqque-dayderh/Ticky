@@ -104,25 +104,11 @@
           </label>
         </div>
 
-        <div class="admin-grid">
-          <label class="field">
-            <span class="label">UPI ID (receiving)</span>
-            <input type="text" name="upiVpa" required>
-          </label>
-          <label class="field">
-            <span class="label">Payee name shown in the UPI app</span>
-            <input type="text" name="upiPayeeName" required>
-          </label>
-        </div>
+        <p class="admin-hint">The receiving UPI ID and payee name are set in YouPI PG&rsquo;s Merchant Admin, which checks every payment before a ticket is issued.</p>
 
         <label class="field">
           <span class="label">Support email</span>
           <input type="email" name="supportEmail" required>
-        </label>
-
-        <label class="field">
-          <span class="label">Hosted UPI QR image URL (optional)</span>
-          <input type="url" name="payQrImageUrl" placeholder="Leave blank to generate one from the UPI details above">
         </label>
 
         <label class="field">
@@ -181,7 +167,7 @@
     <section class="admin-section admin-section--danger" aria-labelledby="next-title">
       <h2 class="section-title" id="next-title">Start the next edition</h2>
       <p class="admin-hint">
-        Wipes every attendee row and payment screenshot for the current event, re-opens
+        Wipes every attendee row for the current event, re-opens
         registration, and applies whatever is saved above as the new event. This is what
         used to mean editing code and redeploying — now it is one button. Irreversible.
       </p>
