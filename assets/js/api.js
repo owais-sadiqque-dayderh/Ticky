@@ -1,8 +1,9 @@
 /**
- * Thin client for the Ticky server (server/).
+ * Thin client for the Apps Script Web App.
  *
- * Every POST goes out as a "simple request": Content-Type text/plain carrying
- * a JSON string, so the browser never needs a CORS preflight.
+ * Apps Script cannot answer a CORS preflight, so every POST goes out as a
+ * "simple request": Content-Type text/plain carrying a JSON string. The server
+ * parses e.postData.contents either way.
  */
 (function (global) {
   var CFG = global.OSDAYS_CONFIG || {};
@@ -11,7 +12,7 @@
     var url = CFG.API_BASE || '';
     if (!url || url.indexOf('PASTE_') === 0) {
       throw new ApiError(
-        'This page is not connected to a backend yet. Put the Ticky server URL into config.js.',
+        'This page is not connected to a backend yet. Paste the Apps Script Web App URL into web/config.js.',
         'NOT_CONFIGURED'
       );
     }
@@ -40,7 +41,12 @@
     try {
       return JSON.parse(text);
     } catch (err) {
-      throw new ApiError('The backend sent something that is not JSON. Is API_BASE pointing at the Ticky server?', 'NOT_JSON');
+      // Almost always the Google sign-in interstitial: the deployment is not
+      // set to "Anyone", so an anonymous browser gets an HTML login page.
+      throw new ApiError(
+        'The backend replied with a sign-in page. Redeploy the Web App with access set to "Anyone".',
+        'NOT_PUBLIC'
+      );
     }
   }
 
@@ -81,19 +87,11 @@
         name: form.name,
         email: form.email,
         phone: form.phone,
+        amount: form.amount,
+        proof: form.proof,       // { type, data } — base64, no multipart to preflight
         company: form.company,   // honeypot; always empty for a real person
         extra: form.extra        // answers to this event's custom questions, if any
       });
-    },
-
-    /** Has the bank confirmed this registration's payment yet? */
-    ticketStatus: function (ref, token) {
-      return post({ action: 'ticketStatus', ref: ref, token: token });
-    },
-
-    /** Open a new payment attempt for a registration whose last one failed. */
-    retryPayment: function (ref, token) {
-      return post({ action: 'retryPayment', ref: ref, token: token });
     },
 
     checkin: function (payload, staffKey) {
@@ -105,8 +103,7 @@
     },
 
     stats: function (staffKey) {
-      // Credentials ride in a POST body, never in a URL that proxies and history keep.
-      return staffKey ? post({ action: 'stats', staffKey: staffKey }) : get({ action: 'stats' });
+      return get({ action: 'stats', staffKey: staffKey });
     },
 
     /** Staff switch: stop or resume taking responses on the public form. */
@@ -116,7 +113,7 @@
 
     /** Staff only: the full event config and field schema, for admin.html. */
     adminConfig: function (staffKey) {
-      return post({ action: 'adminConfig', staffKey: staffKey });
+      return get({ action: 'adminConfig', staffKey: staffKey });
     },
 
     /** Staff only: patch the event's own details. */
@@ -198,6 +195,22 @@
       } catch (err) {
         return '';
       }
+    },
+
+    /**
+     * UPI deep link. Opening this on a phone hands the payee and the exact
+     * amount straight to GPay/PhonePe/Paytm, which is what stops the
+     * amount-mismatch problem at its source.
+     */
+    upiLink: function (ev, note) {
+      var params = [
+        'pa=' + encodeURIComponent(ev.upiVpa),
+        'pn=' + encodeURIComponent(ev.upiPayeeName),
+        'am=' + encodeURIComponent(Number(ev.amount).toFixed(2)),
+        'cu=' + encodeURIComponent(ev.currency || 'INR'),
+        'tn=' + encodeURIComponent(note || (ev.name + ' ' + ev.edition))
+      ];
+      return 'upi://pay?' + params.join('&');
     }
   };
 })(window);

@@ -101,12 +101,26 @@
   );
 }
 
+[data-theme='space'] .drop[data-state='filled'] {
+  border-color: var(--void-hair);
+  background: var(--void-sunk);
+}
+
+[data-theme='space'] .drop[data-state='filled'] .drop__text {
+  color: var(--star);
+}
+
+[data-theme='space'] .drop[data-state='filled'] .drop__meta {
+  color: var(--star-dim);
+}
+
 /* A QR code needs real contrast to scan, so its own black-on-white stays —
    it just reads, appropriately, as one bright instrument reading against the
    night rather than something to blend in. Framed a little more deliberately
    for it: a dashed ring with the faint hum of a fix once one is locked in. */
 
-[data-theme='space'] .ticket__qr {
+[data-theme='space'] .ticket__qr,
+[data-theme='space'] .pay__qr img {
   border-color: var(--void-hair);
 }
 
