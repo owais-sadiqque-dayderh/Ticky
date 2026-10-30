@@ -37,7 +37,7 @@
         input.select();
         return;
       }
-      doorKey = data.staffToken || candidate;
+      doorKey = candidate;
       localStorage.setItem(KEY_STORE, doorKey);
       errorSlot.textContent = '';
       start(data);
@@ -47,7 +47,6 @@
   });
 
   document.getElementById('sign-out').addEventListener('click', function () {
-    doorKey = ''; // so a reply still in flight cannot sign this device back in
     localStorage.removeItem(KEY_STORE);
     location.reload();
   });
@@ -120,22 +119,8 @@
   }
 
   async function refreshCounts() {
-    if (!doorKey) return;
     try {
-      var sent = doorKey;
-      var data = await API.stats(sent);
-      if (sent !== doorKey) return;
-      if (data.ok && !data.staff) {
-        // The code was changed; stop asking with the old one and sign in again.
-        doorKey = '';
-        localStorage.removeItem(KEY_STORE);
-        location.reload();
-        return;
-      } else if (data.staffToken && data.staffToken !== doorKey) {
-        doorKey = data.staffToken;
-        localStorage.setItem(KEY_STORE, doorKey);
-      }
-      applyStats(data);
+      applyStats(await API.stats(doorKey));
     } catch (err) {
       /* the door keeps working whether or not the count refreshes */
     }

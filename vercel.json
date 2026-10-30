@@ -4,8 +4,7 @@
   "trailingSlash": false,
   "rewrites": [
     { "source": "/scan", "destination": "/scan.html" },
-    { "source": "/dash", "destination": "/dash.html" },
-    { "source": "/order-:outcome", "destination": "/index.html" }
+    { "source": "/dash", "destination": "/dash.html" }
   ],
   "headers": [
     {

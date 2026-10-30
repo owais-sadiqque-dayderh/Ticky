@@ -38,6 +38,7 @@
       doorsLabel: event.doorsLabel,
       venueLine: event.venueLine,
       amountLabel: fmt.money(event.amount, event.currency),
+      upiVpa: event.upiVpa,
       supportEmail: event.supportEmail
     });
 
@@ -45,6 +46,16 @@
 
     var support = document.getElementById('support-link');
     if (support && event.supportEmail) support.href = 'mailto:' + event.supportEmail;
+
+    var deepLink = fmt.upiLink(event, event.name + ' ' + event.edition + ' ticket');
+
+    // The QR encodes this same deep link, so scanning it hands the payee and
+    // exact amount straight to whatever UPI app reads it. A hosted GPay QR
+    // image is used instead when one is configured.
+    var qr = document.getElementById('pay-qr');
+    qr.src = event.payQrImageUrl
+      || 'https://quickchart.io/qr?size=360&margin=1&ecLevel=M&dark=191512&light=ffffff&text=' + encodeURIComponent(deepLink);
+    qr.alt = 'UPI QR code to pay ' + fmt.money(event.amount, event.currency) + ' to ' + event.upiPayeeName;
   }
 
   /**
@@ -69,8 +80,6 @@
   }
 
   function closeForm(message) {
-    // Someone who paid before the form closed still gets to see their ticket.
-    if (loadPending()) return;
     form.hidden = true;
     closedPanel.hidden = false;
     document.getElementById('closed-note').textContent =
@@ -322,6 +331,9 @@
   function focusField(fieldName) {
     var input = fieldElement(fieldName);
     if (!input) return;
+    // The file input is clipped rather than hidden, so it still takes focus and
+    // .drop:focus-within draws the ring around the box standing in for it.
+    if (input.type === 'file') input.scrollIntoView({ behavior: 'smooth', block: 'center' });
     input.focus();
   }
 
@@ -338,6 +350,131 @@
     });
   });
 
+  /* --- the payment screenshot --------------------------------------------- */
+
+  var MAX_BYTES = 6 * 1024 * 1024;
+  var MAX_EDGE = 1600;   // more than enough to read a payment screen
+  var TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'application/pdf'];
+
+  var proofInput = form.elements.proof;
+  var dropZone = document.getElementById('proof-drop');
+  var proofThumb = document.getElementById('proof-thumb');
+  var proof = null;   // { type, data } once a file has been read
+
+  function describeSize(bytes) {
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+  }
+
+  function setDropState(state, kind, text, meta) {
+    dropZone.setAttribute('data-state', state);
+    dropZone.setAttribute('data-kind', kind || 'image');
+    document.getElementById('proof-text').textContent = text;
+    document.getElementById('proof-meta').textContent = meta;
+  }
+
+  function clearProof(message) {
+    proof = null;
+    proofInput.value = '';
+    proofThumb.hidden = true;
+    proofThumb.removeAttribute('src');
+    setDropState('empty', 'image', 'Add the screenshot', 'PNG, JPG or PDF');
+    showFieldError('proof', message || '');
+  }
+
+  /**
+   * Shrink a photo to something worth uploading over a venue's wifi. Anything we
+   * cannot draw — a PDF, a HEIC the browser will not decode — is sent as-is;
+   * only the size limit applies then.
+   */
+  function shrinkImage(file) {
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve({ data: canvas.toDataURL('image/jpeg', 0.82), type: 'image/jpeg', preview: canvas.toDataURL('image/jpeg', 0.5) });
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+  }
+
+  function readAsDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(new Error('That file could not be read. Try picking it again.')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  proofInput.addEventListener('change', async function () {
+    var file = proofInput.files && proofInput.files[0];
+    if (!file) return clearProof('');
+
+    if (TYPES.indexOf(file.type) < 0 && !/^image\//.test(file.type)) {
+      return clearProof('A screenshot or a PDF works. That one is a ' + (file.type || 'kind we cannot read') + '.');
+    }
+
+    setDropState('empty', 'image', 'Reading…', file.name);
+
+    try {
+      var shrunk = /^image\//.test(file.type) ? await shrinkImage(file) : null;
+      var dataUrl = shrunk ? shrunk.data : await readAsDataUrl(file);
+      var base64 = String(dataUrl).replace(/^data:[^,]*,/, '');
+      var bytes = Math.floor(base64.replace(/=+$/, '').length * 3 / 4);
+
+      if (bytes > MAX_BYTES) {
+        return clearProof('That file is ' + describeSize(bytes) + '. Anything under 6 MB is fine.');
+      }
+
+      proof = { type: shrunk ? shrunk.type : file.type, data: base64 };
+
+      if (shrunk) {
+        proofThumb.src = shrunk.preview;
+        proofThumb.hidden = false;
+        setDropState('filled', 'image', 'Screenshot added', describeSize(bytes) + ' · tap to change');
+      } else {
+        proofThumb.hidden = true;
+        setDropState('filled', 'file', file.name, describeSize(bytes) + ' · tap to change');
+      }
+      showFieldError('proof', '');
+    } catch (err) {
+      clearProof(err.message);
+    }
+  });
+
+  /* --- copy the VPA ------------------------------------------------------- */
+
+  document.getElementById('copy-vpa').addEventListener('click', async function (e) {
+    var btn = e.currentTarget;
+    try {
+      await navigator.clipboard.writeText(event.upiVpa);
+      var original = btn.textContent;
+      btn.setAttribute('data-copied', 'true');
+      btn.textContent = 'Copied';
+      setTimeout(function () {
+        btn.removeAttribute('data-copied');
+        btn.textContent = original;
+      }, 1600);
+    } catch (err) {
+      // Clipboard blocked: selecting the text does the same job.
+      var range = document.createRange();
+      range.selectNodeContents(btn);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
   /* --- submit ------------------------------------------------------------- */
 
   function setStatus(tone, title, detail) {
@@ -351,117 +488,6 @@
     statusBox.appendChild(document.createTextNode(detail || ''));
   }
 
-  /* --- paying ---------------------------------------------------------------
-     The form opens a payment on the server and sends this tab to YouPI's
-     checkout. YouPI sends it back here; from then on this page only asks the
-     server whether the bank has confirmed it. Nothing the browser says counts
-     as paid. The ref and token live in localStorage so a reload, or the trip
-     out to a UPI app and back, picks up where it left off. */
-
-  var PENDING_STORE = 'ticky.pending';
-  var POLL_MS = 3000;
-  var POLL_FOR_MS = 15 * 60 * 1000;
-  var payWait = document.getElementById('pay-wait');
-  var retryBtn = document.getElementById('pay-retry');
-  var pollTimer = null;
-
-  function savePending(p) { localStorage.setItem(PENDING_STORE, JSON.stringify(p)); }
-  function loadPending() {
-    try { return JSON.parse(localStorage.getItem(PENDING_STORE) || 'null'); } catch (err) { return null; }
-  }
-  function clearPending() { localStorage.removeItem(PENDING_STORE); }
-
-  function lockForm(locked) {
-    form.querySelectorAll('input, select, textarea').forEach(function (input) { input.disabled = locked; });
-  }
-
-  function resetSubmit() {
-    submitBtn.disabled = false;
-    submitBtn.hidden = false;
-    submitBtn.textContent = 'Pay and get my ticket';
-  }
-
-  function goPay(checkoutUrl) {
-    submitBtn.textContent = 'Opening the payment…';
-    window.location.assign(checkoutUrl);
-  }
-
-  function showWaiting(pending, status) {
-    clearTimeout(pollTimer);
-    lockForm(true);
-    submitBtn.hidden = true;
-    payWait.hidden = false;
-    // YouPI hands back the session that is still open, or a fresh one once the
-    // last attempt is over, so one button covers "I closed it" and "it failed".
-    retryBtn.hidden = false;
-    retryBtn.textContent = status && status.canRetry ? 'Try paying again' : 'Back to the payment';
-    previewName.textContent = pending.name || previewName.textContent;
-    previewName.setAttribute('data-empty', 'false');
-    previewStatus.textContent = status && status.canRetry ? 'Not paid yet' : 'Waiting for the bank';
-    setStatus(status && status.canRetry ? 'error' : '', '', (status && status.message) || 'Checking your payment…');
-  }
-
-  async function checkPayment(pending) {
-    var status;
-    try {
-      status = await API.ticketStatus(pending.ref, pending.token);
-    } catch (err) {
-      status = { ok: true, status: 'PENDING', message: 'Reconnecting… ' + err.message };
-    }
-
-    if (!status.ok) {
-      clearPending();
-      lockForm(false);
-      payWait.hidden = true;
-      resetSubmit();
-      setStatus('error', 'Not found', status.error);
-      return;
-    }
-
-    if (status.status === 'PENDING') {
-      showWaiting(pending, status);
-      if (!status.canRetry && Date.now() - pending.startedAt < POLL_FOR_MS) {
-        pollTimer = setTimeout(function () { checkPayment(pending); }, POLL_MS);
-      } else if (!status.canRetry) {
-        setStatus('error', 'Still not confirmed. ', 'If money left your account, write to us with the time you paid; otherwise try again.');
-      }
-      return;
-    }
-
-    onIssued(status, pending.name);
-  }
-
-  retryBtn.addEventListener('click', async function () {
-    var pending = loadPending();
-    if (!pending) return;
-    retryBtn.disabled = true;
-    try {
-      var result = await API.retryPayment(pending.ref, pending.token);
-      if (!result.ok) {
-        setStatus('error', '', result.error);
-        return;
-      }
-      if (result.checkoutUrl) {
-        pending.startedAt = Date.now();
-        savePending(pending);
-        goPay(result.checkoutUrl);
-        return;
-      }
-      checkPayment(pending);
-    } catch (err) {
-      setStatus('error', 'Could not reach the server', err.message);
-    } finally {
-      retryBtn.disabled = false;
-    }
-  });
-
-  document.getElementById('pay-reset').addEventListener('click', function () {
-    if (!window.confirm('Start over? If you already paid, wait here instead — the ticket will turn up.')) return;
-    clearTimeout(pollTimer);
-    clearPending();
-    window.location.replace(window.location.pathname);
-  });
-
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
 
@@ -470,6 +496,8 @@
       email: form.elements.email.value,
       phone: form.elements.phone.value,
       company: form.elements.company.value,
+      amount: event.amount,
+      proof: proof,
       extra: collectCustomValues()
     };
 
@@ -485,6 +513,11 @@
       showFieldError('extra_' + f.key, message);
       if (message && !firstBad) firstBad = 'extra_' + f.key;
     });
+
+    if (!proof) {
+      showFieldError('proof', 'Add the payment screenshot — it is the only record either of us keeps.');
+      if (!firstBad) firstBad = 'proof';
+    }
 
     if (firstBad) {
       focusField(firstBad);
@@ -512,24 +545,16 @@
           focusField(result.field);
         }
         setStatus('error', 'Not sent yet', result.error);
-        resetSubmit();
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Get my ticket';
         return;
       }
 
-      // The honeypot answers "ok" with nothing to pay for, to tell a bot
-      // nothing. A password manager filling that hidden field would land a
-      // real person here, so show them the message.
-      if (!result.checkoutUrl) {
-        setStatus('ok', '', result.message);
-        resetSubmit();
-        return;
-      }
-
-      savePending({ ref: result.ref, token: result.token, name: values.name.trim(), startedAt: Date.now() });
-      goPay(result.checkoutUrl);
+      onIssued(result, values);
     } catch (err) {
       setStatus('error', 'Could not reach the server', err.message);
-      resetSubmit();
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Get my ticket';
     }
   });
 
@@ -538,18 +563,20 @@
    * preview: the real QR goes in, and this screen is enough to get through the
    * door even if the email never arrives.
    */
-  function onIssued(result, name) {
-    clearTimeout(pollTimer);
-    payWait.hidden = true;
-    submitBtn.hidden = false;
-    submitBtn.disabled = true;
+  function onIssued(result, values) {
+    // The button carries the confirmation; the panel carries the detail. Saying
+    // the same thing in both places would make one of them noise.
     submitBtn.textContent = 'You are in';
     submitBtn.setAttribute('data-done', 'true');
     setStatus('ok', '', result.message);
-    lockForm(true);
+
+    // The honeypot answers "ok" without a ticket, to tell a bot nothing. A
+    // password manager filling that hidden field would land a real person here,
+    // so show them the message rather than a ticket full of undefined.
+    if (!result.ticketId) return;
 
     preview.setAttribute('data-state', 'issued');
-    previewName.textContent = result.name || name;
+    previewName.textContent = values.name;
     previewName.setAttribute('data-empty', 'false');
     document.getElementById('ticket-id').textContent = result.ticketId;
 
@@ -563,23 +590,12 @@
     slot.appendChild(qr);
 
     previewStatus.textContent = 'Screenshot this, or check your inbox';
-    document.querySelector('.preview').scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
 
-  /** Back from YouPI, or reloaded mid-payment: carry on waiting. */
-  function resume() {
-    var pending = loadPending();
-    var params = new URLSearchParams(window.location.search);
-    if (!pending || (params.get('ticket') && params.get('ticket') !== pending.ref)) return false;
-    // A returning tab gets a fresh window to wait in.
-    pending.startedAt = Date.now();
-    savePending(pending);
-    showWaiting(pending, null);
-    checkPayment(pending);
-    return true;
+    form.querySelectorAll('input, select, textarea').forEach(function (input) { input.disabled = true; });
+    dropZone.setAttribute('aria-disabled', 'true');
+    document.querySelector('.preview').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   render();
   loadEvent();
-  resume();
 })();
